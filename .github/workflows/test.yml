@@ -1,0 +1,43 @@
+name: Test Action
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Test the action
+        id: genny
+        uses: ./
+        with:
+          working-directory: './demosite'
+
+      - name: Display build directory
+        run: |
+          echo "Build directory: ${{ steps.genny.outputs.build-directory }}"
+      
+      - name: Verify build output
+        run: |
+          BUILD_DIR="${{ steps.genny.outputs.build-directory }}"
+          if [ -d "$BUILD_DIR" ]; then
+            echo "✅ Build directory exists"
+            ls -la "$BUILD_DIR"
+            if [ -f "$BUILD_DIR/index.html" ]; then
+              echo "✅ index.html generated"
+            else
+              echo "❌ index.html not found"
+              exit 1
+            fi
+          else
+            echo "❌ Build directory not found"
+            exit 1
+          fi
+

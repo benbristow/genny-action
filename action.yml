@@ -1,0 +1,107 @@
+name: 'Genny Action'
+description: 'Clone, build, and run Genny static site generator'
+author: 'benbristow'
+inputs:
+  working-directory:
+    description: 'Working directory for the action'
+    required: false
+    default: '.'
+outputs:
+  build-directory:
+    description: 'Directory where the site was built'
+    value: ${{ steps.set_output.outputs.build-directory }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+    
+    - name: Clone, build, and run Genny
+      shell: bash
+      run: |
+        set -e
+        
+        REPOSITORY="https://github.com/benbristow/genny"
+        WORKING_DIR="${{ inputs.working-directory }}"
+        
+        echo "Cloning repository: $REPOSITORY"
+        echo "Working directory: $WORKING_DIR"
+        
+        # Ensure working directory exists and convert to absolute path
+        mkdir -p "$WORKING_DIR"
+        WORKING_DIR="$(cd "$WORKING_DIR" && pwd)"
+        
+        # Use temporary directory for Genny installation
+        TEMP_DIR="${RUNNER_TEMP:-/tmp}"
+        GENNY_DIR="$TEMP_DIR/genny-$(date +%s)"
+        
+        # Verify .NET SDK is available
+        echo "Checking .NET SDK version..."
+        dotnet --version
+        
+        # Clone the repository to temporary directory
+        echo "Cloning Genny repository to temporary directory..."
+        git clone "$REPOSITORY" "$GENNY_DIR"
+        
+        # Build the Genny project
+        echo "Building Genny project..."
+        GENNY_PROJECT="$GENNY_DIR/Genny/Genny.csproj"
+        dotnet build "$GENNY_PROJECT"
+        
+        # Run Genny with build --verbose from the working directory
+        echo "Running Genny build with --verbose flag from working directory..."
+        cd "$WORKING_DIR"
+        echo "Verifying working directory structure..."
+        echo "Contents of working directory:"
+        ls -la "$WORKING_DIR" || true
+        if [ -f "$WORKING_DIR/genny.toml" ]; then
+          echo "✅ genny.toml found"
+        else
+          echo "⚠️ genny.toml not found in working directory"
+        fi
+        
+        # Run Genny build and capture exit code
+        if ! dotnet run --project "$GENNY_PROJECT" -- build --verbose; then
+          echo "❌ ERROR: Genny build command failed with exit code $?"
+          echo "Please check the build output above for errors."
+          exit 1
+        fi
+        
+        # Find the build directory for output (Genny creates build/ in the current directory)
+        BUILD_DIR="$WORKING_DIR/build"
+        
+        echo "Checking for build directory at: $BUILD_DIR"
+        echo "Current directory: $(pwd)"
+        echo "Working directory: $WORKING_DIR"
+        
+        if [ ! -d "$BUILD_DIR" ]; then
+          echo "❌ ERROR: Build directory not found at: $BUILD_DIR"
+          echo "Current directory: $(pwd)"
+          echo "Working directory: $WORKING_DIR"
+          echo "Listing working directory contents:"
+          ls -la "$WORKING_DIR" || true
+          echo "Searching for build directories in working directory..."
+          find "$WORKING_DIR" -maxdepth 3 -type d -name "build" 2>/dev/null | head -10 || true
+          echo ""
+          echo "The Genny build process may have failed or the build directory was not created."
+          echo "The output will be set in the next step, but this run is failing."
+          exit 1
+        fi
+        
+    - name: Set Build Directory Output
+      id: set_output
+      shell: bash
+      run: |
+        # Recalculate working directory to be safe and find the build directory
+        WORKING_DIR="$(cd "${{ inputs.working-directory }}" && pwd)"
+        BUILD_DIR="$WORKING_DIR/build"
+        
+        # Set the output variable using the recommended $GITHUB_OUTPUT file
+        echo "build-directory=$BUILD_DIR" >> $GITHUB_OUTPUT
+        echo "Build output directory set to: $BUILD_DIR"
+        
+branding:
+  icon: 'zap'
+  color: 'blue'
